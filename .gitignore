@@ -1,1 +1,6 @@
 build/*
+
+# ignore build tests
+src/test/*
+!src/test/*.*
+!src/test/*/
