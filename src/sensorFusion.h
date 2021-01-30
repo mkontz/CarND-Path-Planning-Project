@@ -52,4 +52,4 @@ private:
   map<int, SFData> m_dataMap;
 };
 
-#endif  // HELPERS_H
+#endif  // SENSOR_FUSION_H

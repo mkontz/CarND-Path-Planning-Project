@@ -3,6 +3,9 @@
 
 #include "helpers.h"
 #include "sensorFusion.h"
+#include "cubicSpline.h"
+#include "quinticSpline.h"
+#include "polyFunctions.h"
 
 #include <math.h>
 #include <string>
@@ -18,7 +21,7 @@ class PathPlanner
 {
 public:
   PathPlanner() : 
-    m_targetVel(22.352),    // target velocity (m/s) - 22.352m/s = 50mph
+    m_targetVel(22.352 * 0.995),    // target velocity (m/s) - 22.352m/s = 50mph
     m_targetAccel(5.0),     // target acceleration (m/s^2)
     m_targetDecel(5.0),     // target deceleration (m/s^2)
     m_hardDecel(10.0),      // hard deceleration (m/s^2)
@@ -75,6 +78,12 @@ public:
   void plan(vector<double>& next_x_vals, 
             vector<double>& next_y_vals)
   {
+    // Fit lanes splines
+    fitLanes(100.0, 200);
+
+    // Generate initial path the follows previous path
+    makeInitialPath();
+
     // Generate and score paths
     makePaths();
 
@@ -83,6 +92,125 @@ public:
   }
 
 private:
+  void fitLanes(double distBefore, double distAfter)
+  {
+    // Calculate closest waypoint to current x, y position
+    int i_cur = ClosestWaypoint(m_car_x, m_car_y, m_map_waypoints_x, m_map_waypoints_y);
+
+    int i_start = i_cur;
+    while (distBefore < sDist(m_car_s, m_map_waypoints_s[i_start]))
+    {
+      i_start = (i_start-1) % m_map_waypoints_s.size();
+    }
+
+    int i_end = i_cur;
+    while (sDist(m_car_s, m_map_waypoints_s[i_end]) < distAfter)
+    {
+      i_end = (i_end+1) % m_map_waypoints_s.size();
+    }
+
+    vector<double> x_left;
+    vector<double> y_left;
+    vector<double> x_center;
+    vector<double> y_center;
+    vector<double> x_right;
+    vector<double> y_right;
+    if (i_start < i_end)
+    {
+      for (int i = i_start; i <= i_end; ++i)
+      {
+        x_left.push_back(m_map_waypoints_x[i] + 2.0 * m_map_waypoints_dx[i]);
+        y_left.push_back(m_map_waypoints_y[i] + 2.0 * m_map_waypoints_dy[i]);
+        x_center.push_back(m_map_waypoints_x[i] + 6.0 * m_map_waypoints_dx[i]);
+        y_center.push_back(m_map_waypoints_y[i] + 6.0 * m_map_waypoints_dy[i]);
+        x_right.push_back(m_map_waypoints_x[i] + 10.0 * m_map_waypoints_dx[i]);
+        y_right.push_back(m_map_waypoints_y[i] + 10.0 * m_map_waypoints_dy[i]);
+      }
+    }
+    else
+    {
+      for (int i = i_start; i < m_map_waypoints_x.size(); ++i)
+      {
+        x_left.push_back(m_map_waypoints_x[i] + 2.0 * m_map_waypoints_dx[i]);
+        y_left.push_back(m_map_waypoints_y[i] + 2.0 * m_map_waypoints_dy[i]);
+        x_center.push_back(m_map_waypoints_x[i] + 6.0 * m_map_waypoints_dx[i]);
+        y_center.push_back(m_map_waypoints_y[i] + 6.0 * m_map_waypoints_dy[i]);
+        x_right.push_back(m_map_waypoints_x[i] + 10.0 * m_map_waypoints_dx[i]);
+        y_right.push_back(m_map_waypoints_y[i] + 10.0 * m_map_waypoints_dy[i]);
+      }
+      for (int i = 0; i <= i_end; ++i)
+      {
+        x_left.push_back(m_map_waypoints_x[i] + 2.0 * m_map_waypoints_dx[i]);
+        y_left.push_back(m_map_waypoints_y[i] + 2.0 * m_map_waypoints_dy[i]);
+        x_center.push_back(m_map_waypoints_x[i] + 6.0 * m_map_waypoints_dx[i]);
+        y_center.push_back(m_map_waypoints_y[i] + 6.0 * m_map_waypoints_dy[i]);
+        x_right.push_back(m_map_waypoints_x[i] + 10.0 * m_map_waypoints_dx[i]);
+        y_right.push_back(m_map_waypoints_y[i] + 10.0 * m_map_waypoints_dy[i]);
+      }
+    }
+
+    m_leftLane.update(x_left, y_left);
+    m_centerLane.update(x_center, y_center);
+    m_rightLane.update(x_right, y_right);
+  }
+
+  void makeInitialPath()
+  {
+    m_init_path_x.clear();
+    m_init_path_y.clear();
+
+    if ((0 < m_previous_path_x.size()) &&
+        (m_previous_path_x.size() == m_previous_path_x.size()))
+    {
+      size_t idx = previousPathCurrentIndex(m_car_x, m_car_y);
+      idx -= (0 < idx) ? 1 : 0;
+
+      vector<double> dist;
+      for (size_t i = idx; (i <= 10) && (i < m_previous_path_x.size()); ++i)
+      {
+        m_init_path_x.push_back(m_previous_path_x[i]);
+        m_init_path_y.push_back(m_previous_path_y[i]);
+        if (dist.empty())
+        {
+          dist.push_back(0.0);
+        }
+        else
+        {
+          dist.push_back(dist.back() + distance(m_init_path_x[i-1], 
+                                                m_init_path_y[i-1],
+                                                m_init_path_x[i],
+                                                m_init_path_y[i]));
+        }
+      }
+
+      vector<double> c_x;
+      polyFit(dist, m_init_path_x, c_x, 5);
+
+      vector<double> c_y;
+      polyFit(dist, m_init_path_y, c_y, 3);
+
+      double dx = evalPoly(dist.back(), c_x, 1);
+      double dy = evalPoly(dist.back(), c_y, 1);
+      double ddx = evalPoly(dist.back(), c_x, 2);
+      double ddy = evalPoly(dist.back(), c_y, 2);
+
+      m_init_heading = std::atan2(dy, dx);
+      m_init_curvature = (dx*ddy - dy*ddx) / std::pow((dx*dx + dy*dy), 1.5);
+    }
+    else
+    {
+      // set initial point
+      m_init_path_x.push_back(m_car_x);
+      m_init_path_y.push_back(m_car_y);
+
+      // set 2nd point to initial path speed (could be 0)
+      m_init_path_x.push_back(m_car_x + m_car_speed * m_dt * cos(m_car_yaw));
+      m_init_path_y.push_back(m_car_y + m_car_speed * m_dt * sin(m_car_yaw));
+
+      m_init_heading = m_car_yaw;
+      m_init_curvature = 0;
+    }
+  }
 
 
   void makePaths()
@@ -268,6 +396,28 @@ private:
     return std::fmod((s2 - s1 + 0.5 * m_maxS), m_maxS) - 0.5 * m_maxS;
   }
 
+  size_t previousPathCurrentIndex(double x, double y)
+  {
+    size_t bestIdx = 0;
+    double dx = m_previous_path_x[0] - x;
+    double dy = m_previous_path_y[0] - y;
+    double bestDistSq = dx*dx + dy*dy;
+    double distSq;
+    for (size_t i = 1; i < m_previous_path_x.size(); ++i)
+    {
+      dx = m_previous_path_x[0] - x;
+      dy = m_previous_path_y[0] - y;
+      distSq = dx*dx + dy*dy;
+      if (distSq < bestDistSq)
+      {
+        bestDistSq = distSq;
+        bestIdx = i;
+      }
+    }
+
+    return bestIdx;
+  }
+
   //parameters
   double m_targetVel;
   double m_targetAccel;
@@ -279,6 +429,11 @@ private:
 
   // Possible paths
   vector<Path> m_paths;
+
+  // Lanes
+  CubicSpline m_leftLane;
+  CubicSpline m_centerLane;
+  CubicSpline m_rightLane;
 
   // Waypoints
   vector<double> m_map_waypoints_x;
@@ -300,6 +455,11 @@ private:
   double m_end_path_d;
 
   SensorFusion m_sensorFusion;
+
+  vector<double> m_init_path_x;
+  vector<double> m_init_path_y;
+  double m_init_heading;
+  double m_init_curvature;
 };
 
-#endif  // HELPERS_H
+#endif  // PATH_PLANNER_H

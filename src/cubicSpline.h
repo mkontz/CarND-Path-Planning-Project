@@ -29,6 +29,13 @@ public:
       calculateSpline(y, m_y_coeff);
       retVal = true;
     }
+    
+    // update segment length data
+    updateSegmentLen();
+
+    // update start and end markers
+    getStart();
+    getEnd();
 
     return retVal;
   }

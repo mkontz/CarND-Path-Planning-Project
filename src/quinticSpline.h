@@ -113,6 +113,13 @@ public:
       retVal = true;
     }
 
+    // update segment length data
+    updateSegmentLen();
+
+    // update start and end markers
+    getStart();
+    getEnd();
+
     return retVal;
   }
 };
