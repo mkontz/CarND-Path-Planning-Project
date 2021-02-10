@@ -359,6 +359,11 @@ protected:
                           const int n,
                           const vector<vector<double> >& coeff)
   {
+    if ((marker.idx < 0) || (int(coeff.size()) <= marker.idx))
+    {
+      return 0.0;
+    }
+
     return evalPoly(marker.weight, coeff[marker.idx], n);
   }
 
