@@ -250,108 +250,117 @@ public:
     return bestMarker;
   }
 
-Marker advanceMarker(Marker marker, double advDist)
-{
-  double segDist = evalPoly(marker.weight, m_weightToSegDist_coeff[marker.idx]);
-
-  while ((marker < getEnd()) && (0 < advDist))
+  bool isOnSpline(const double x, const double y, double th = 0.001)
   {
-    if (advDist < (m_segLen[marker.idx] - segDist))
+    Pnt2D pnt = getPoint(findClosestMarker(x, y));
+    double dx = x - pnt.x;
+    double dy = y - pnt.y;
+
+    return (std::sqrt(dx * dx + dy *dy) < th);
+  }
+
+  Marker advanceMarker(Marker marker, double advDist)
+  {
+    double segDist = evalPoly(marker.weight, m_weightToSegDist_coeff[marker.idx]);
+
+    while ((marker < getEnd()) && (0 < advDist))
     {
-      double d = segDist + advDist;
+      if (advDist < (m_segLen[marker.idx] - segDist))
+      {
+        double d = segDist + advDist;
 
-      marker.weight = evalPoly(d, m_segDistToWeight_coeff[marker.idx]);
-      advDist = -1; // to break loop
+        marker.weight = evalPoly(d, m_segDistToWeight_coeff[marker.idx]);
+        advDist = -1; // to break loop
+      }
+      else
+      {
+        advDist -= m_segLen[marker.idx] - segDist;
+        marker.idx++;
+        marker.weight = 0.0;
+        segDist = 0.0;
+      }
     }
-    else
+
+    if (getEnd() <= marker)
     {
-      advDist -= m_segLen[marker.idx] - segDist;
-      marker.idx++;
-      marker.weight = 0.0;
-      segDist = 0.0;
+      marker = getEnd();
     }
+
+    return marker;
   }
 
-  if (getEnd() <= marker)
+  Marker retreatMarker(Marker marker, double retDist)
   {
-    marker = getEnd();
-  }
+    double segDist = evalPoly(marker.weight, m_weightToSegDist_coeff[marker.idx]);
 
-  return marker;
-}
-
-Marker retreatMarker(Marker marker, double retDist)
-{
-  double segDist = evalPoly(marker.weight, m_weightToSegDist_coeff[marker.idx]);
-
-  while ((getStart() < marker) && (0 < retDist))
-  {
-    if (retDist < segDist)
+    while ((getStart() < marker) && (0 < retDist))
     {
-      double d = segDist - retDist;
+      if (retDist < segDist)
+      {
+        double d = segDist - retDist;
 
-      marker.weight = evalPoly(d, m_segDistToWeight_coeff[marker.idx]);
-      retDist = -1; // to break loop
+        marker.weight = evalPoly(d, m_segDistToWeight_coeff[marker.idx]);
+        retDist = -1; // to break loop
+      }
+      else
+      {
+        retDist -= segDist;
+        marker.idx--;
+        marker.weight = 1.0;
+        segDist = m_segLen[marker.idx];
+      }
     }
-    else
+
+    if (marker <= getStart())
     {
-      retDist -= segDist;
-      marker.idx--;
-      marker.weight = 1.0;
-      segDist = m_segLen[marker.idx];
+      marker = getStart();
     }
+
+    return marker;
   }
 
-  if (marker <= getStart())
+  double getSplineDist(const Marker marker)
   {
-    marker = getStart();
-  }
-
-  return marker;
-}
-
-double getSplineDist(const Marker marker)
-{
-  double dist = 0;
-  for (int i = 0; i < marker.idx; ++i)
-  {
-    dist += m_segLen[i];
-  }
-  dist += evalPoly(marker.weight, m_weightToSegDist_coeff[marker.idx]);
-
-  return dist;
-}
-
-double getSignedSplineDist(const Marker mk1, const Marker mk2)
-{
-  return getSplineDist(mk2) - getSplineDist(mk1);
-}
-
-Marker getMarkerFromDistance(const double dist)
-{
-  Marker marker(0, 0.0);
-  double toGo = dist;
-  while ((marker < getEnd()) && (0 < toGo))
-  {
-    if (m_segLen[marker.idx] <= toGo)
+    double dist = 0;
+    for (int i = 0; i < marker.idx; ++i)
     {
-      toGo -= m_segLen[marker.idx];
-      marker.idx++;
+      dist += m_segLen[i];
     }
-    else
-    {
-      marker.weight = evalPoly(toGo, m_segDistToWeight_coeff[marker.idx]);
-      toGo = -1; // to break loop
-    }
+    dist += evalPoly(marker.weight, m_weightToSegDist_coeff[marker.idx]);
+
+    return dist;
   }
 
-  if (getEnd() <= marker)
+  double getSignedSplineDist(const Marker mk1, const Marker mk2)
   {
-    marker = getEnd();
+    return getSplineDist(mk2) - getSplineDist(mk1);
   }
 
-  return marker;
-}
+  Marker getMarkerFromDistance(const double dist)
+  {
+    Marker marker(0, 0.0);
+    double toGo = dist;
+    while ((marker < getEnd()) && (0 < toGo))
+    {
+      if (m_segLen[marker.idx] <= toGo)
+      {
+        toGo -= m_segLen[marker.idx];
+        marker.idx++;
+      }
+      else
+      {
+        marker.weight = evalPoly(toGo, m_segDistToWeight_coeff[marker.idx]);
+        toGo = -1; // to break loop
+      }
+    }
+
+    if (getEnd() <= marker)
+    {
+      marker = getEnd();
+    }
+
+    return marker;
+  }
 
 protected:
 

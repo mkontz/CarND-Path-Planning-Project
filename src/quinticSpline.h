@@ -11,8 +11,6 @@ using std::vector;
 using std::cos;
 using std::sin;
 
-
-
 class QuinticSpline : public BaseSpline
 {
 public:
