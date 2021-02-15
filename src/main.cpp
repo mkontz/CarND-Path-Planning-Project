@@ -117,6 +117,7 @@ int main() {
 
           // Prepare path planner
           PathPlanner pathPlanner;
+
           pathPlanner.updateWaypoints(map_waypoints_x,
                                       map_waypoints_y,
                                       map_waypoints_s,
@@ -135,7 +136,7 @@ int main() {
                                  end_path_d,
                                  sf_vec);
 
-          // // plan next path
+          // plan next path
           pathPlanner.plan(next_x_vals, next_y_vals);
 
           msgJson["next_x"] = next_x_vals;

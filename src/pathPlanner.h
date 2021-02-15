@@ -23,13 +23,14 @@ class PathPlanner
 {
 public:
   PathPlanner() : 
-    m_targetVel(22.352 * 0.98),    // target velocity (m/s) - 22.352m/s = 50mph
-    m_targetAccel(3.0),     // target acceleration (m/s^2)
-    m_targetDecel(3.0),     // target deceleration (m/s^2)
+    m_targetVel(22.352 * 0.99),    // target velocity (m/s) - 22.352m/s = 50mph
+    m_targetAccel(5.0),     // target acceleration (m/s^2)
+    m_targetDecel(5.0),     // target deceleration (m/s^2)
     m_hardDecel(10.0),      // hard deceleration (m/s^2)
     m_maxS(6945.554),       // track length (m)
     m_width(4.0),           // lane width (m)
     m_dt(0.02),             // update time (s)
+    m_d_target(-1),
     m_lane(m_centerLane)
   { }
 
@@ -81,11 +82,10 @@ public:
   void plan(vector<double>& next_x_vals, 
             vector<double>& next_y_vals)
   {
-    static int planNum = 0;
-    m_planNum = ++planNum;
+    m_paths.clear();
 
     // Fit lanes splines
-    fitLanes(150.0, 250);
+    fitLanes(50.0, 250);
 
     // Generate initial path the follows previous path
     makeInitialPath();
@@ -96,28 +96,17 @@ public:
     // // // Set points on path to determine speed
     speedControl(next_x_vals, next_y_vals);
 
-    // Write plan data to file for visualization
+    // // Write plan data to file for visualization
     // std::cout << "Writing to file" << std::endl;
     // logPlan();
   }
 
 private:
-  void fitLanes(double distBefore, double distAfter)
+  void calcLaneParameters(int i_start, int i_end)
   {
-    // Calculate closest waypoint to current x, y position
-    int i_cur = ClosestWaypoint(m_car_x, m_car_y, m_map_waypoints_x, m_map_waypoints_y);
-
-    int i_start = (i_cur - 1) % m_map_waypoints_s.size();
-    while ( sDist(m_map_waypoints_s[i_start], m_car_s) < distBefore)
-    {
-      i_start = (i_start-1) % m_map_waypoints_s.size();
-    }
-
-    int i_end = (i_cur + 1) % m_map_waypoints_s.size();
-    while (sDist(m_car_s, m_map_waypoints_s[i_end]) < distAfter)
-    {
-      i_end = (i_end+1) % m_map_waypoints_s.size();
-    }
+    m_leftLaneParameters.resize(4, vector<double>(0));
+    m_centerLaneParameters.resize(4, vector<double>(0));
+    m_rightLaneParameters.resize(4, vector<double>(0));
 
     vector<double> x_left;
     vector<double> y_left;
@@ -125,43 +114,153 @@ private:
     vector<double> y_center;
     vector<double> x_right;
     vector<double> y_right;
-    if (i_start < i_end)
+
+    int n  = m_map_waypoints_x.size();
+
+    for (int i = 0; i < n; ++i)
     {
-      for (int i = i_start; i <= i_end; ++i)
-      {
-        x_left.push_back(m_map_waypoints_x[i] + 2.0 * m_map_waypoints_dx[i]);
-        y_left.push_back(m_map_waypoints_y[i] + 2.0 * m_map_waypoints_dy[i]);
-        x_center.push_back(m_map_waypoints_x[i] + 6.0 * m_map_waypoints_dx[i]);
-        y_center.push_back(m_map_waypoints_y[i] + 6.0 * m_map_waypoints_dy[i]);
-        x_right.push_back(m_map_waypoints_x[i] + 10.0 * m_map_waypoints_dx[i]);
-        y_right.push_back(m_map_waypoints_y[i] + 10.0 * m_map_waypoints_dy[i]);
-      }
-    }
-    else
-    {
-      for (int i = i_start; i < m_map_waypoints_x.size(); ++i)
-      {
-        x_left.push_back(m_map_waypoints_x[i] + 2.0 * m_map_waypoints_dx[i]);
-        y_left.push_back(m_map_waypoints_y[i] + 2.0 * m_map_waypoints_dy[i]);
-        x_center.push_back(m_map_waypoints_x[i] + 6.0 * m_map_waypoints_dx[i]);
-        y_center.push_back(m_map_waypoints_y[i] + 6.0 * m_map_waypoints_dy[i]);
-        x_right.push_back(m_map_waypoints_x[i] + 10.0 * m_map_waypoints_dx[i]);
-        y_right.push_back(m_map_waypoints_y[i] + 10.0 * m_map_waypoints_dy[i]);
-      }
-      for (int i = 0; i <= i_end; ++i)
-      {
-        x_left.push_back(m_map_waypoints_x[i] + 2.0 * m_map_waypoints_dx[i]);
-        y_left.push_back(m_map_waypoints_y[i] + 2.0 * m_map_waypoints_dy[i]);
-        x_center.push_back(m_map_waypoints_x[i] + 6.0 * m_map_waypoints_dx[i]);
-        y_center.push_back(m_map_waypoints_y[i] + 6.0 * m_map_waypoints_dy[i]);
-        x_right.push_back(m_map_waypoints_x[i] + 10.0 * m_map_waypoints_dx[i]);
-        y_right.push_back(m_map_waypoints_y[i] + 10.0 * m_map_waypoints_dy[i]);
-      }
+      x_left.push_back(m_map_waypoints_x[i] + 2.0 * m_map_waypoints_dx[i]);
+      y_left.push_back(m_map_waypoints_y[i] + 2.0 * m_map_waypoints_dy[i]);
+      x_center.push_back(m_map_waypoints_x[i] + 6.0 * m_map_waypoints_dx[i]);
+      y_center.push_back(m_map_waypoints_y[i] + 6.0 * m_map_waypoints_dy[i]);
+      x_right.push_back(m_map_waypoints_x[i] + 10.0 * m_map_waypoints_dx[i]);
+      y_right.push_back(m_map_waypoints_y[i] + 10.0 * m_map_waypoints_dy[i]);
     }
 
-    m_leftLane.update(x_left, y_left);
-    m_centerLane.update(x_center, y_center);
-    m_rightLane.update(x_right, y_right);
+    // fit points to cubic spline with extra on each end
+    CubicSpline leftLane;
+    CubicSpline centerLane;
+    CubicSpline rightLane;
+
+    CubicSpline leftLaneMid;
+    CubicSpline centerLaneMid;
+    CubicSpline rightLaneMid;
+
+    int h = 3;
+    Marker marker(h, 0.0);
+
+    int i = mod2(i_start, n);
+    int i_stop = mod2(i_end + 1, n);
+    while (i != i_stop)
+    {
+      {
+        vector<double> x_l;
+        vector<double> y_l;
+        vector<double> x_c;
+        vector<double> y_c;
+        vector<double> x_r;
+        vector<double> y_r;
+
+        for (int k = i-h; k <= i+h; ++k)
+        {
+          int k1 = mod2(k, n);
+
+          x_l.push_back(x_left[k1]);
+          y_l.push_back(y_left[k1]);
+          x_c.push_back(x_center[k1]);
+          y_c.push_back(y_center[k1]);
+          x_r.push_back(x_right[k1]);
+          y_r.push_back(y_right[k1]);
+        }
+
+        leftLane.update(x_l, y_l);
+        centerLane.update(x_c, y_c);
+        rightLane.update(x_r, y_r);
+      }
+
+      {
+        vector<double> x_l;
+        vector<double> y_l;
+        vector<double> x_c;
+        vector<double> y_c;
+        vector<double> x_r;
+        vector<double> y_r;
+
+        for (int k = i-h; k < i+h; ++k)
+        {
+          int k1 = mod2(k, n);
+          int k2 = mod2(k+1, n);
+
+          x_l.push_back((x_left[k1] + x_left[k2]) / 2.0);
+          y_l.push_back((y_left[k1] + y_left[k2]) / 2.0);
+          x_c.push_back((x_center[k1] + x_center[k2]) / 2.0);
+          y_c.push_back((y_center[k1] + y_center[k2]) / 2.0);
+          x_r.push_back((x_right[k1] + x_right[k2]) / 2.0);
+          y_r.push_back((y_right[k1] + y_right[k2]) / 2.0);
+        }
+
+        leftLaneMid.update(x_l, y_l);
+        centerLaneMid.update(x_c, y_c);
+        rightLaneMid.update(x_r, y_r);
+      }
+
+      Marker mid = leftLaneMid.findClosestMarker(x_left[i], y_left[i]);
+      Pnt2D pnt = leftLaneMid.getPoint(mid);
+      double midHeading = leftLaneMid.getHeadingRad(mid);
+      while (pi() < (midHeading - leftLane.getHeadingRad(marker))) { midHeading -= 2.0 * pi(); }
+      while ((midHeading - leftLane.getHeadingRad(marker)) < -pi()) { midHeading += 2.0 * pi(); }
+      m_leftLaneParameters[0].push_back((x_left[i] + pnt.x) / 2.0);
+      m_leftLaneParameters[1].push_back((y_left[i] + pnt.y) / 2.0);
+      m_leftLaneParameters[2].push_back((leftLane.getHeadingRad(marker) + midHeading) / 2.0);
+      m_leftLaneParameters[3].push_back((leftLane.getCurvature(marker) + leftLaneMid.getCurvature(mid)) / 2.0);
+
+      mid = centerLaneMid.findClosestMarker(x_center[i], y_center[i]);
+      pnt = centerLaneMid.getPoint(mid);
+      midHeading = centerLaneMid.getHeadingRad(mid);
+      while (pi() < (midHeading - centerLane.getHeadingRad(marker))) { midHeading -= 2.0 * pi(); }
+      while ((midHeading - centerLane.getHeadingRad(marker)) < -pi()) { midHeading += 2.0 * pi(); }
+      m_centerLaneParameters[0].push_back((x_center[i] + pnt.x) / 2.0);
+      m_centerLaneParameters[1].push_back((y_center[i] + pnt.y) / 2.0);
+      m_centerLaneParameters[2].push_back((centerLane.getHeadingRad(marker) + centerLaneMid.getHeadingRad(mid)) / 2.0);
+      m_centerLaneParameters[3].push_back((centerLane.getCurvature(marker) + centerLaneMid.getCurvature(mid)) / 2.0);
+
+      mid = rightLaneMid.findClosestMarker(x_right[i], y_right[i]);
+      pnt = rightLaneMid.getPoint(mid);
+      midHeading = rightLaneMid.getHeadingRad(mid);
+      while (pi() < (midHeading - rightLane.getHeadingRad(marker))) { midHeading -= 2.0 * pi(); }
+      while ((midHeading - rightLane.getHeadingRad(marker)) < -pi()) { midHeading += 2.0 * pi(); }
+      m_rightLaneParameters[0].push_back((x_right[i] + pnt.x) / 2.0);
+      m_rightLaneParameters[1].push_back((y_right[i] + pnt.y) / 2.0);
+      m_rightLaneParameters[2].push_back((rightLane.getHeadingRad(marker) + rightLaneMid.getHeadingRad(mid)) / 2.0);
+      m_rightLaneParameters[3].push_back((rightLane.getCurvature(marker) + rightLaneMid.getCurvature(mid)) / 2.0);
+
+      i = mod2(i+1, n);
+    }
+  }
+
+  void fitLanes(double distBefore, double distAfter)
+  {
+    // Calculate closest waypoint to current x, y position
+    int i_cur = ClosestWaypoint(m_car_x, m_car_y, m_map_waypoints_x, m_map_waypoints_y);
+
+    int n = m_map_waypoints_s.size();
+
+    int i_start = mod2(i_cur - 1, n);
+    while ( sSignedDist(m_map_waypoints_s[i_start], m_car_s) < distBefore)
+    {
+      i_start = mod2(i_start - 1, n);
+    }
+
+    int i_end = mod2(i_cur+1, n);
+    while (sSignedDist(m_car_s, m_map_waypoints_s[i_end]) < distAfter)
+    {
+      i_end = mod2(i_end + 1, n);
+    }
+
+    calcLaneParameters(i_start, i_end);
+
+    m_leftLane.update(m_leftLaneParameters[0],
+                      m_leftLaneParameters[1],
+                      m_leftLaneParameters[2],
+                      m_leftLaneParameters[3]);
+    m_centerLane.update(m_centerLaneParameters[0],
+                        m_centerLaneParameters[1],
+                        m_centerLaneParameters[2],
+                        m_centerLaneParameters[3]);
+    m_rightLane.update(m_rightLaneParameters[0],
+                       m_rightLaneParameters[1],
+                       m_rightLaneParameters[2],
+                       m_rightLaneParameters[3]);
   }
 
   void makeInitialPath()
@@ -220,7 +319,7 @@ private:
         m_init_curvature = (dx*ddy - dy*ddx) / std::pow((dx*dx + dy*dy), 1.5);
       }
     }
-    else
+    else // no previous path
     {
       // set initial point
       m_init_path_x.push_back(m_car_x);
@@ -250,40 +349,25 @@ private:
     m_activeTransition = activeTransition;
     m_s_endTransition = s_endTransition;
 
-    vector<double> sd = getFrenet(m_init_path_x.back(),
-                                  m_init_path_y.back(),
-                                  m_init_heading,
-                                  m_map_waypoints_x,
-                                  m_map_waypoints_y);
+    if (m_lane.isOnSpline(m_init_path_x.back(), m_init_path_y.back(), 0.001))
+    {
+      m_activeTransition = false;
+    }
 
-    double s_minTrans = 5.0;
     if (m_activeTransition)
     {
-      double ds = sSignedDist(sd[0], m_s_endTransition);
-      // std::cout << "Plan: " << m_planNum << ", ds: " << ds;
-      // std::cout << ", s_init: " << sd[0] << ", s_end: " << m_s_endTransition;
-      // std::cout << std::endl;
-      if ((ds < 0.0) &&
-          (m_lane.isOnSpline(m_init_path_x.back(), m_init_path_y.back(), 0.001)))
+      vector<double> sd_init = getFrenet(m_init_path_x.back(),
+                                         m_init_path_y.back(),
+                                         m_init_heading,
+                                         m_map_waypoints_x,
+                                         m_map_waypoints_y);
+
+      double ds = sSignedDist(sd_init[0], m_s_endTransition);
+      if (ds < 2.0)
       {
-        m_activeTransition = false;
-      }    
-      else
-      {
-        
-        if (ds < s_minTrans)
-        {
-          m_s_endTransition = sd[0] + s_minTrans;
-        }
-      }
-    }
-    else
-    {
-      // This can happen if the lanes shift due to adding/removing points
-      if (!m_lane.isOnSpline(m_init_path_x.back(), m_init_path_y.back(), 0.001))
-      {
-        m_activeTransition = true;
-        m_s_endTransition = sd[0] + 10.0;
+        // std::cout << "Extending transition " << m_s_endTransition;
+        m_s_endTransition = sd_init[0] + 2.0;
+        // std::cout << " to " << m_s_endTransition << "\n";
       }
     }
 
@@ -322,18 +406,24 @@ private:
         }
       }
 
+      double dSafe = 15.0;
+
       if (m_d_target < 4.0) // in left lane
       {
         if (sFrontLeft < 75.0) // car ahead
         {
-          if ((25.0 < sFrontCenter) && (sRearCenter < -25.0)) // room to move
+          if ((idxFrontCenter < 0) && (sRearCenter < -dSafe)) // no car in lane
+          {
+            // Go to center lane
+            tranisionLane(6.0);
+          }
+          else if ((dSafe < sFrontCenter) && (sRearCenter < -dSafe)) // room to move
           {
             double leftSpd = sfCarSpeed(idxFrontLeft);
             double centerSpd = sfCarSpeed(idxFrontCenter);
             if ((leftSpd < centerSpd) || (100.0 < sFrontCenter))
             {
               // Go to center lane
-              // std::cout <<"Plan: " << m_planNum << " l->c" << std::endl;
               tranisionLane(6.0);
             }
           }
@@ -343,14 +433,18 @@ private:
       {
         if (sFrontRight < 75.0)
         {
-          if ((25.0 < sFrontCenter) && (sRearCenter < -25.0))
+          if ((idxFrontCenter < 0) && (sRearCenter < -dSafe)) // no car in lane
+          {
+            // Go to center lane
+            tranisionLane(6.0);
+          }
+          else if ((dSafe < sFrontCenter) && (sRearCenter < -dSafe))
           {
             double rightSpd = sfCarSpeed(idxFrontRight);
             double centerSpd = sfCarSpeed(idxFrontCenter);
             if ((rightSpd < centerSpd) || (100.0 < sFrontCenter))
             {
               // Go to center lane
-              // std::cout <<"Plan: " << m_planNum << " r->c" << std::endl;
               tranisionLane(6.0);
             }
           }
@@ -364,18 +458,26 @@ private:
           double centerSpd = sfCarSpeed(idxFrontCenter);
           double rightSpd = sfCarSpeed(idxFrontRight);
 
-          if ((25.0 < sFrontLeft) && (sRearLeft < -25.0) && 
+          if ((idxFrontLeft < 0) && (sRearLeft < -dSafe)) // no car in lane
+          {
+            // Go to left lane
+            tranisionLane(2.0);
+          }
+          else if ((idxFrontRight < 0) && (sRearRight < -dSafe)) // no car in lane
+          {
+            // Go to right lane
+            tranisionLane(10.0);
+          }
+          else if ((dSafe < sFrontLeft) && (sRearLeft < -dSafe) && 
               ((centerSpd < leftSpd) || (100.0 < sFrontLeft)))
           {
             // Go to left lane
-            // std::cout <<"Plan: " << m_planNum << " c->l" << std::endl;
             tranisionLane(2.0);           
           }
-          else if ((25.0 < sFrontRight) && (sRearRight < -25.0) && 
+          else if ((dSafe < sFrontRight) && (sRearRight < -dSafe) && 
                    ((centerSpd < rightSpd) || (100.0 < sFrontRight)))
           {
             // Go to right lane
-            // std::cout <<"Plan: " << m_planNum << " c->r" << std::endl;
             tranisionLane(10.0);
           }
         }
@@ -384,12 +486,7 @@ private:
 
     if (m_activeTransition)
     {
-      // std::cout <<"Plan: " << m_planNum << " transitioning: " << m_d_target << std::endl;
       makeTransitionSpline();
-    }
-    else
-    {
-      // std::cout <<"Plan: " << m_planNum << " tracking: " << m_d_target << std::endl;
     }
 
     // member -> static (store history)
@@ -401,7 +498,8 @@ private:
   {
     static double d_target = -1.0;
 
-    // check for deliberate change
+    double d_last = d_target;
+
     if (0.0 < d)
     {
       d_target = d;
@@ -410,7 +508,7 @@ private:
     // check if there is not history
     if (d_target < 0)
     {
-      if (m_car_d < 4.0)
+      if ( m_car_d < 4.0)
       {
         d_target = 2.0;
       }
@@ -422,26 +520,37 @@ private:
       {
         d_target = 6.0;
       }
-    } 
+    }
 
-    if (d_target < 4.0)
+    // Update current lane spline
+    if ( d_target < 4.0)
     {
+      d_target = 2.0;
       m_lane = m_leftLane;
     }
     else if (8.0 < d_target)
     {
+      d_target = 10.0;
       m_lane = m_rightLane;
     }
     else
     {
+      d_target = 6.0;
       m_lane = m_centerLane;
     }
 
+    // Update member variable
     m_d_target = d_target;
+
+    // if ((0.0 < d_last) && (d_last != d_target))
+    // {
+    //   std::cout << "Changing lane from " << d_last << " to " << d_target << std::endl;
+    // }
   }
 
   void makeTransitionSpline()
   {
+
     vector<double> xy = getXY(m_s_endTransition,
                               m_d_target,
                               m_map_waypoints_s,
@@ -456,12 +565,23 @@ private:
     vector<double> k = {m_init_curvature, m_lane.getCurvature(laneMk)};
 
     m_tranSpline.update(x, y, h, k);
+
+    // {  
+    //   vector<double> sd = getFrenet(m_init_path_x.back(),
+    //                                 m_init_path_y.back(),
+    //                                 m_init_heading,
+    //                                 m_map_waypoints_x,
+    //                                 m_map_waypoints_y);
+
+    //   std::cout << "Transition Spline: s_car: "<< m_car_s << ", s_init: " << sd[0]; 
+    //   std::cout << ", s_end: " << m_s_endTransition<< ", m_d_target: " << m_d_target << "\n";
+    // }
   }
 
   void tranisionLane(double d_target)
   {
-    m_activeTransition = true;
     setTargetLane(d_target);
+    m_activeTransition = true;
 
     vector<double> sd = getFrenet(m_init_path_x.back(),
                                   m_init_path_y.back(),
@@ -470,7 +590,9 @@ private:
                                   m_map_waypoints_y);
 
     double tranDistance = 100.0;
-    m_s_endTransition = std::fmod(sd[0] + tranDistance, m_maxS);
+    m_s_endTransition = mod2(sd[0] + tranDistance, m_maxS);
+    // std::cout << "Lane change: s_car: "<< m_car_s << ", s_init: " << sd[0]; 
+    // std::cout << ", s_end: " << m_s_endTransition << ", m_d_target: " << m_d_target << "\n";
   }
 
   void speedControl(vector<double>& next_x_vals, 
@@ -478,8 +600,8 @@ private:
   {
     Path path;
 
-    // time it takes to travel 25.0m + stopping distance at target speed/decel
-    double t_path = 25.0 / m_targetVel + m_targetVel / m_targetDecel;
+    // time it takes to travel 50.0m + stopping distance at target speed/decel
+    double t_path = 200.0 / m_targetVel + m_targetVel / m_targetDecel;
     int n_path = std::ceil(t_path / m_dt);
 
     // predicted state of car
@@ -525,19 +647,19 @@ private:
     }
 
     Marker tranMk(0, 0.0);
-    while (path.next_x_vals.size() < n_path)
+    double newSpd = std::min(car_spd + m_dt * m_targetAccel, m_targetVel);
+    while ((path.next_x_vals.size() < n_path) && (1e-4 < newSpd))
     {
-      double newSpd = std::min(car_spd + m_dt * m_targetAccel, m_targetVel);
-
+      newSpd = std::min(car_spd + m_dt * m_targetAccel, m_targetVel);
+      
       if (0 <= nextIdx)
       {
-        double s_follow = 10 + next_spd * next_spd / (2.0 * m_hardDecel);
+        double s_follow = 0.25 * newSpd * newSpd / (2.0 * m_hardDecel);
         double ds = sDist(car_s, next_s);
 
         // Calc speed for distance tracking control
         // feedforward speed + p distance control
         double controlSpd = next_spd + 0.5 * (ds - s_follow);
-
         newSpd = std::min(controlSpd, newSpd);
 
         // update next car position
@@ -545,39 +667,46 @@ private:
       }
 
       // update car position & speed
-      car_spd = newSpd;
+      car_spd = std::max(std::max(0.0, car_spd - m_dt * m_targetDecel), newSpd);
 
       double stepDist = m_dt * car_spd;
-      double remainingTranDist = -1.0;
+      Pnt2D pnt;
+      double heading;
       if (m_activeTransition)
       {
-        remainingTranDist = m_tranSpline.getSignedSplineDist(tranMk, m_tranSpline.getEnd());
-      }
-
-      if (0.0 < remainingTranDist)
-      {
-        if (stepDist < remainingTranDist)
+        double remainingTranDist = m_tranSpline.getSignedSplineDist(tranMk, m_tranSpline.getEnd());
+      
+        if (0.0 < remainingTranDist)
         {
-          tranMk = m_tranSpline.advanceMarker(tranMk, stepDist);
+          if (stepDist < remainingTranDist)
+          {
+            tranMk = m_tranSpline.advanceMarker(tranMk, stepDist);
+          }
+          else
+          {
+            tranMk = m_tranSpline.getEnd();
+            laneMk = m_lane.advanceMarker(laneMk, stepDist - remainingTranDist);
+          }
         }
         else
         {
-          tranMk = m_tranSpline.getEnd();
-          laneMk = m_lane.advanceMarker(laneMk, stepDist - remainingTranDist);
+          laneMk = m_lane.advanceMarker(laneMk, stepDist);
         }
+
+        pnt = (tranMk < m_tranSpline.getEnd()) 
+            ? m_tranSpline.getPoint(tranMk)
+            : m_lane.getPoint(laneMk);
+
+        heading = (tranMk < m_tranSpline.getEnd()) 
+            ? m_tranSpline.getHeadingRad(tranMk)
+            : m_lane.getHeadingRad(laneMk);
       }
       else
       {
         laneMk = m_lane.advanceMarker(laneMk, stepDist);
+        pnt = m_lane.getPoint(laneMk);
+        heading = m_lane.getHeadingRad(laneMk);
       }
-
-      Pnt2D pnt = (tranMk < m_tranSpline.getEnd()) 
-          ? m_tranSpline.getPoint(tranMk)
-          : m_lane.getPoint(laneMk);
-
-      double heading = (tranMk < m_tranSpline.getEnd()) 
-          ? m_tranSpline.getHeadingRad(tranMk)
-          : m_lane.getHeadingRad(laneMk);
 
       path.next_x_vals.push_back(pnt.x);
       path.next_y_vals.push_back(pnt.y);
@@ -625,32 +754,37 @@ private:
 
   double sfCarSpeed(int idx)
   {
-    SFData sfData = m_sensorFusion.getData(idx);
+    double speed = 0.0;
 
-    // unit vector in s direction
-    vector<double> xy0 = getXY(sfData.s,
-                               sfData.d,
-                               m_map_waypoints_s,
-                               m_map_waypoints_x,
-                                m_map_waypoints_y);
-    vector<double> xy1 = getXY(sfData.s + 1,
-                               sfData.d,
-                               m_map_waypoints_s,
-                               m_map_waypoints_x,
-                                m_map_waypoints_y);
-    double dx = xy1[0] - xy0[0];
-    double dy = xy1[1] - xy0[1];
+    if (idx < 0)
+    {
+      SFData sfData = m_sensorFusion.getData(idx);
 
-    // dot velocity vector with unit vector in s direction to get forward lane speed.
-    double speed = (dx * sfData.vx + dy * sfData.vy) / std::sqrt(dx*dx + dy*dy);
+      // unit vector in s direction
+      vector<double> xy0 = getXY(sfData.s,
+                                 sfData.d,
+                                 m_map_waypoints_s,
+                                 m_map_waypoints_x,
+                                  m_map_waypoints_y);
+      vector<double> xy1 = getXY(sfData.s + 1,
+                                 sfData.d,
+                                 m_map_waypoints_s,
+                                 m_map_waypoints_x,
+                                  m_map_waypoints_y);
+      double dx = xy1[0] - xy0[0];
+      double dy = xy1[1] - xy0[1];
+
+      // dot velocity vector with unit vector in s direction to get forward lane speed.
+      speed = (dx * sfData.vx + dy * sfData.vy) / std::sqrt(dx*dx + dy*dy);
+    }
 
     return speed;
   }
 
   double sDist(double s1, double s2)
   {
-    s1 = std::fmod(s1, m_maxS);
-    s2 = std::fmod(s2, m_maxS);
+    s1 = mod2(s1, m_maxS);
+    s2 = mod2(s2, m_maxS);
 
     double dist = s2 - s1;
     if (s2 < s1)
@@ -663,7 +797,7 @@ private:
 
   double sSignedDist(double s1, double s2)
   {
-    return std::fmod(0.5 * m_maxS + s2 - s1, m_maxS) - 0.5 * m_maxS;
+    return mod2(0.5 * m_maxS + s2 - s1, m_maxS) - 0.5 * m_maxS;
   }
 
   size_t previousPathCurrentIndex(double x, double y)
@@ -689,6 +823,14 @@ private:
     bestIdx -= (0 < bestIdx) ? 1 : 0;
 
     return bestIdx;
+  }
+
+  template<typename T>
+  T mod2(T a, T b)
+  {
+    while (a < 0) { a += b; }
+    while (b <= a) { a -= b; }
+    return a;
   }
 
   void logPlan()
@@ -743,10 +885,11 @@ private:
     }
 
     {
+      static int planNum = 0;
       string fName = std::getenv("HOME");
       fName += "/tmp/plans.txt";
       std::ofstream outFile;
-      if (1 == m_planNum)
+      if (1 == ++planNum)
       {
         outFile.open(fName.c_str(), std::ofstream::trunc);
       }
@@ -754,7 +897,7 @@ private:
       {
         outFile.open(fName.c_str(), std::ofstream::out | std::ofstream::app);
       }
-      outFile << "Starting new plan: " << m_planNum << std::endl;
+      outFile << "Starting new plan: " << planNum << std::endl;
       outFile << "car_x = " << m_car_x << std::endl;
       outFile << "car_y = " << m_car_y << std::endl;
       outFile << "car_yaw = " << m_car_yaw << std::endl;
@@ -821,9 +964,12 @@ private:
   vector<Path> m_paths;
 
   // Lanes
-  CubicSpline m_leftLane;
-  CubicSpline m_centerLane;
-  CubicSpline m_rightLane;
+  vector<vector<double> > m_leftLaneParameters;
+  vector<vector<double> > m_centerLaneParameters;
+  vector<vector<double> > m_rightLaneParameters;
+  QuinticSpline m_leftLane;
+  QuinticSpline m_centerLane;
+  QuinticSpline m_rightLane;
 
   // Waypoints
   vector<double> m_map_waypoints_x;
@@ -853,12 +999,10 @@ private:
 
   // Path variable
   double m_d_target;
-  CubicSpline& m_lane;
+  QuinticSpline& m_lane;
   bool m_activeTransition;
   double m_s_endTransition;
   QuinticSpline m_tranSpline;
-
-  int m_planNum;
 };
 
 #endif  // PATH_PLANNER_H
