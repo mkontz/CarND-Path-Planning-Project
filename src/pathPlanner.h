@@ -211,7 +211,7 @@ private:
       while ((midHeading - centerLane.getHeadingRad(marker)) < -pi()) { midHeading += 2.0 * pi(); }
       m_centerLaneParameters[0].push_back((x_center[i] + pnt.x) / 2.0);
       m_centerLaneParameters[1].push_back((y_center[i] + pnt.y) / 2.0);
-      m_centerLaneParameters[2].push_back((centerLane.getHeadingRad(marker) + centerLaneMid.getHeadingRad(mid)) / 2.0);
+      m_centerLaneParameters[2].push_back((centerLane.getHeadingRad(marker) + midHeading) / 2.0);
       m_centerLaneParameters[3].push_back((centerLane.getCurvature(marker) + centerLaneMid.getCurvature(mid)) / 2.0);
 
       mid = rightLaneMid.findClosestMarker(x_right[i], y_right[i]);
@@ -221,7 +221,7 @@ private:
       while ((midHeading - rightLane.getHeadingRad(marker)) < -pi()) { midHeading += 2.0 * pi(); }
       m_rightLaneParameters[0].push_back((x_right[i] + pnt.x) / 2.0);
       m_rightLaneParameters[1].push_back((y_right[i] + pnt.y) / 2.0);
-      m_rightLaneParameters[2].push_back((rightLane.getHeadingRad(marker) + rightLaneMid.getHeadingRad(mid)) / 2.0);
+      m_rightLaneParameters[2].push_back((rightLane.getHeadingRad(marker) + midHeading) / 2.0);
       m_rightLaneParameters[3].push_back((rightLane.getCurvature(marker) + rightLaneMid.getCurvature(mid)) / 2.0);
 
       i = mod2(i+1, n);
