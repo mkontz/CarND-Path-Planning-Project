@@ -102,132 +102,6 @@ public:
   }
 
 private:
-  void calcLaneParameters(int i_start, int i_end)
-  {
-    m_leftLaneParameters.resize(4, vector<double>(0));
-    m_centerLaneParameters.resize(4, vector<double>(0));
-    m_rightLaneParameters.resize(4, vector<double>(0));
-
-    vector<double> x_left;
-    vector<double> y_left;
-    vector<double> x_center;
-    vector<double> y_center;
-    vector<double> x_right;
-    vector<double> y_right;
-
-    int n  = m_map_waypoints_x.size();
-
-    for (int i = 0; i < n; ++i)
-    {
-      x_left.push_back(m_map_waypoints_x[i] + 2.0 * m_map_waypoints_dx[i]);
-      y_left.push_back(m_map_waypoints_y[i] + 2.0 * m_map_waypoints_dy[i]);
-      x_center.push_back(m_map_waypoints_x[i] + 6.0 * m_map_waypoints_dx[i]);
-      y_center.push_back(m_map_waypoints_y[i] + 6.0 * m_map_waypoints_dy[i]);
-      x_right.push_back(m_map_waypoints_x[i] + 10.0 * m_map_waypoints_dx[i]);
-      y_right.push_back(m_map_waypoints_y[i] + 10.0 * m_map_waypoints_dy[i]);
-    }
-
-    // fit points to cubic spline with extra on each end
-    CubicSpline leftLane;
-    CubicSpline centerLane;
-    CubicSpline rightLane;
-
-    CubicSpline leftLaneMid;
-    CubicSpline centerLaneMid;
-    CubicSpline rightLaneMid;
-
-    int h = 3;
-    Marker marker(h, 0.0);
-
-    int i = mod2(i_start, n);
-    int i_stop = mod2(i_end + 1, n);
-    while (i != i_stop)
-    {
-      {
-        vector<double> x_l;
-        vector<double> y_l;
-        vector<double> x_c;
-        vector<double> y_c;
-        vector<double> x_r;
-        vector<double> y_r;
-
-        for (int k = i-h; k <= i+h; ++k)
-        {
-          int k1 = mod2(k, n);
-
-          x_l.push_back(x_left[k1]);
-          y_l.push_back(y_left[k1]);
-          x_c.push_back(x_center[k1]);
-          y_c.push_back(y_center[k1]);
-          x_r.push_back(x_right[k1]);
-          y_r.push_back(y_right[k1]);
-        }
-
-        leftLane.update(x_l, y_l);
-        centerLane.update(x_c, y_c);
-        rightLane.update(x_r, y_r);
-      }
-
-      {
-        vector<double> x_l;
-        vector<double> y_l;
-        vector<double> x_c;
-        vector<double> y_c;
-        vector<double> x_r;
-        vector<double> y_r;
-
-        for (int k = i-h; k < i+h; ++k)
-        {
-          int k1 = mod2(k, n);
-          int k2 = mod2(k+1, n);
-
-          x_l.push_back((x_left[k1] + x_left[k2]) / 2.0);
-          y_l.push_back((y_left[k1] + y_left[k2]) / 2.0);
-          x_c.push_back((x_center[k1] + x_center[k2]) / 2.0);
-          y_c.push_back((y_center[k1] + y_center[k2]) / 2.0);
-          x_r.push_back((x_right[k1] + x_right[k2]) / 2.0);
-          y_r.push_back((y_right[k1] + y_right[k2]) / 2.0);
-        }
-
-        leftLaneMid.update(x_l, y_l);
-        centerLaneMid.update(x_c, y_c);
-        rightLaneMid.update(x_r, y_r);
-      }
-
-      Marker mid = leftLaneMid.findClosestMarker(x_left[i], y_left[i]);
-      Pnt2D pnt = leftLaneMid.getPoint(mid);
-      double midHeading = leftLaneMid.getHeadingRad(mid);
-      while (pi() < (midHeading - leftLane.getHeadingRad(marker))) { midHeading -= 2.0 * pi(); }
-      while ((midHeading - leftLane.getHeadingRad(marker)) < -pi()) { midHeading += 2.0 * pi(); }
-      m_leftLaneParameters[0].push_back((x_left[i] + pnt.x) / 2.0);
-      m_leftLaneParameters[1].push_back((y_left[i] + pnt.y) / 2.0);
-      m_leftLaneParameters[2].push_back((leftLane.getHeadingRad(marker) + midHeading) / 2.0);
-      m_leftLaneParameters[3].push_back((leftLane.getCurvature(marker) + leftLaneMid.getCurvature(mid)) / 2.0);
-
-      mid = centerLaneMid.findClosestMarker(x_center[i], y_center[i]);
-      pnt = centerLaneMid.getPoint(mid);
-      midHeading = centerLaneMid.getHeadingRad(mid);
-      while (pi() < (midHeading - centerLane.getHeadingRad(marker))) { midHeading -= 2.0 * pi(); }
-      while ((midHeading - centerLane.getHeadingRad(marker)) < -pi()) { midHeading += 2.0 * pi(); }
-      m_centerLaneParameters[0].push_back((x_center[i] + pnt.x) / 2.0);
-      m_centerLaneParameters[1].push_back((y_center[i] + pnt.y) / 2.0);
-      m_centerLaneParameters[2].push_back((centerLane.getHeadingRad(marker) + midHeading) / 2.0);
-      m_centerLaneParameters[3].push_back((centerLane.getCurvature(marker) + centerLaneMid.getCurvature(mid)) / 2.0);
-
-      mid = rightLaneMid.findClosestMarker(x_right[i], y_right[i]);
-      pnt = rightLaneMid.getPoint(mid);
-      midHeading = rightLaneMid.getHeadingRad(mid);
-      while (pi() < (midHeading - rightLane.getHeadingRad(marker))) { midHeading -= 2.0 * pi(); }
-      while ((midHeading - rightLane.getHeadingRad(marker)) < -pi()) { midHeading += 2.0 * pi(); }
-      m_rightLaneParameters[0].push_back((x_right[i] + pnt.x) / 2.0);
-      m_rightLaneParameters[1].push_back((y_right[i] + pnt.y) / 2.0);
-      m_rightLaneParameters[2].push_back((rightLane.getHeadingRad(marker) + midHeading) / 2.0);
-      m_rightLaneParameters[3].push_back((rightLane.getCurvature(marker) + rightLaneMid.getCurvature(mid)) / 2.0);
-
-      i = mod2(i+1, n);
-    }
-  }
-
   void fitLanes(double distBefore, double distAfter)
   {
     // Calculate closest waypoint to current x, y position
@@ -247,20 +121,78 @@ private:
       i_end = mod2(i_end + 1, n);
     }
 
-    calcLaneParameters(i_start, i_end);
+    calcLane(i_start, i_end, 2.0, m_leftLane);
+    calcLane(i_start, i_end, 6.0, m_centerLane);
+    calcLane(i_start, i_end, 10.0, m_rightLane);
+  }
 
-    m_leftLane.update(m_leftLaneParameters[0],
-                      m_leftLaneParameters[1],
-                      m_leftLaneParameters[2],
-                      m_leftLaneParameters[3]);
-    m_centerLane.update(m_centerLaneParameters[0],
-                        m_centerLaneParameters[1],
-                        m_centerLaneParameters[2],
-                        m_centerLaneParameters[3]);
-    m_rightLane.update(m_rightLaneParameters[0],
-                       m_rightLaneParameters[1],
-                       m_rightLaneParameters[2],
-                       m_rightLaneParameters[3]);
+  void calcLane(int i_start, int i_end, double d_lane, QuinticSpline& lane)
+  {
+    // position, heading, curvature vectors to define lane spline
+    vector<double> x;
+    vector<double> y;
+    vector<double> h;
+    vector<double> k;
+
+    int n  = m_map_waypoints_x.size();
+   
+    int i = mod2(i_start, n);
+    int i_stop = mod2(i_end + 1, n);
+    while (i != i_stop)
+    {
+      // fit points to cubic spline with extra on each end
+      CubicSpline laneEnds;
+      CubicSpline laneMids;
+
+      // number of extra points on each side
+      const int half = 3;
+      
+      vector<double> x_ends;
+      vector<double> y_ends;
+      vector<double> x_mids;
+      vector<double> y_mids;
+
+      // x-y vector of endpoints
+      for (int k = i-half; k <= i+half; ++k)
+      {
+        int k1 = mod2(k, n);
+        x_ends.push_back(m_map_waypoints_x[k1] + d_lane * m_map_waypoints_dx[k1]);
+        y_ends.push_back(m_map_waypoints_y[k1] + d_lane * m_map_waypoints_dy[k1]);
+      }
+    
+      // x-y vector of midpoints
+      for (int k = 1; k < x_ends.size(); ++k)
+      {
+        x_mids.push_back((x_ends[k-1] + x_ends[k]) / 2.0);
+        y_mids.push_back((y_ends[k-1] + y_ends[k]) / 2.0);
+      }
+
+      // Fit cubic splines through points and midpoints near point of interest
+      // spline through points hug outside of curves, spline through midpoints hug inside
+      // -> use average of two
+      laneEnds.update(x_ends, y_ends);
+      laneMids.update(x_mids, y_mids);
+
+      // Calculate average x, y, heading and curvature      
+      Marker endsMarker(half, 0.0);
+      double h_ends = laneEnds.getHeadingRad(endsMarker);
+
+      Marker midsMarker = laneMids.findClosestMarker(x_ends[half], y_ends[half]);
+      Pnt2D pntMid = laneMids.getPoint(midsMarker);
+
+      // Calculate delta heading using modulo to center around zero
+      double h_delta = mod2(laneMids.getHeadingRad(midsMarker) - h_ends + pi(), 2*pi()) - pi();
+
+      x.push_back((x_ends[half] + pntMid.x) / 2.0);
+      y.push_back((y_ends[half] + pntMid.y) / 2.0);
+      h.push_back(h_ends + h_delta / 2.0);
+      k.push_back((laneEnds.getCurvature(endsMarker) + laneMids.getCurvature(midsMarker)) / 2.0);
+
+      // increment i
+      i = mod2(i+1, n);
+    }
+
+    lane.update(x, y, h, k);
   }
 
   void makeInitialPath()
@@ -964,9 +896,6 @@ private:
   vector<Path> m_paths;
 
   // Lanes
-  vector<vector<double> > m_leftLaneParameters;
-  vector<vector<double> > m_centerLaneParameters;
-  vector<vector<double> > m_rightLaneParameters;
   QuinticSpline m_leftLane;
   QuinticSpline m_centerLane;
   QuinticSpline m_rightLane;
